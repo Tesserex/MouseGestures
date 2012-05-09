@@ -14,15 +14,12 @@ namespace MouseGestures
     public partial class Form1 : Form
     {
         private bool _recording;
-        private PointF _startPoint;
-        private PointF _currentPoint;
-        private int _mouseTick = 0;
-        private List<GesturePoint> points = new List<GesturePoint>();
+        private GestureFactory _factory;
         private GraphicsPath _path = new GraphicsPath();
         private Gesture _gesture = null;
         private Recognition _recognition = null;
+        private PointF _mousePos;
 
-        private int _thresh = 30;
         private Pen _pen;
 
         public Form1()
@@ -32,79 +29,98 @@ namespace MouseGestures
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            _pen = new Pen(Color.Black, 30);
+            _pen = new Pen(Color.Black, 2);
         }
 
-        private void Form1_Click(object sender, EventArgs e)
+        private void gestureSurface_Click(object sender, EventArgs e)
         {
             _recording = !_recording;
 
             if (_recording)
             {
-                _startPoint = _currentPoint;
-                points.Clear();
-                points.Add(new GesturePoint { X = 0, Y = 0, threshold = _thresh });
+                _factory = new GestureFactory();
+                _factory.Start(_mousePos);
                 _path = new GraphicsPath();
-                _path.AddLine(_currentPoint, _currentPoint);
-                BackColor = Color.OrangeRed;
+                gestureSurface.BackColor = Color.OrangeRed;
+                eventList.Items.Clear();
             }
             else
             {
-                _path.AddLine(_currentPoint, _currentPoint);
-                points.Add(new GesturePoint { X = _currentPoint.X - _startPoint.X, Y = _currentPoint.Y - _startPoint.Y, threshold = _thresh });
-                _gesture = new Gesture(points);
+                _gesture = _factory.Finish();
                 _recognition = new Recognition(_gesture);
-                BackColor = Color.White;
+                gestureSurface.BackColor = Color.White;
+
+                _path.ClearMarkers();
+
+                var minX = _gesture.Points.Min(g => g.X);
+                var maxX = _gesture.Points.Max(g => g.X);
+                var minY = _gesture.Points.Min(g => g.Y);
+                var maxY = _gesture.Points.Max(g => g.Y);
+
+                var centerX = (gestureSurface.Width - (minX + maxX)) / 2;
+                var centerY = (gestureSurface.Height - (minY + maxY)) / 2;
+
+                GesturePoint? prev = null;
+
+                foreach (var point in _gesture.Points)
+                {
+                    _path.AddEllipse(point.X + centerX - point.threshold, point.Y + centerY - point.threshold, point.threshold * 2, point.threshold * 2);
+                    
+                    if (prev != null)
+                    {
+                        _path.AddLine(prev.Value.X + centerX, prev.Value.Y + centerY, point.X + centerX, point.Y + centerY);
+                    }
+                    prev = point;
+                }
+                gestureSurface.Refresh();
             }
         }
 
-        private void Form1_MouseMove(object sender, MouseEventArgs e)
+        private void gestureSurface_MouseMove(object sender, MouseEventArgs e)
         {
+            _mousePos = e.Location;
+
             if (_recording)
             {
-                _mouseTick++;
-                if (_mouseTick >= 50)
-                {
-                    _path.AddLine(e.Location, e.Location);
-                    points.Add(new GesturePoint { X = e.X - _startPoint.X, Y = e.Y - _startPoint.Y, threshold = _thresh });
-                    _mouseTick = 0;
-                }
+                _factory.ApplyPoint(e.Location);
             }
-            else if (_recognition != null)
+            else
             {
-                if (_mouseTick == 0)
+                if (_recognition != null)
                 {
                     if (_recognition.Step(e.Location))
                     {
-                        BackColor = Color.LightGreen;
-                        _mouseTick++;
+                        gestureSurface.BackColor = Color.White;
+                        eventList.Items.Add(String.Format("Gesture detected: {0}", _gesture.Name));
                     }
                     else if (_recognition.OK)
                     {
-                        BackColor = Color.Cyan;
+                        gestureSurface.BackColor = Color.Cyan;
                     }
                     else
                     {
-                        BackColor = Color.White;
-                    }
-                }
-                else if (_mouseTick > 0)
-                {
-                    _mouseTick++;
-                    if (_mouseTick >= 20)
-                    {
-                        BackColor = Color.White;
-                        _mouseTick = 0;
+                        gestureSurface.BackColor = Color.White;
                     }
                 }
             }
-
-            _currentPoint = e.Location;
         }
 
-        private void Form1_Paint(object sender, PaintEventArgs e)
+        private void gestureSurface_Paint(object sender, PaintEventArgs e)
         {
             e.Graphics.DrawPath(_pen, _path);
+        }
+
+        private void saveButton_Click(object sender, EventArgs e)
+        {
+            if (_gesture != null)
+            {
+                _gesture.Save("Gesture.xml");
+            }
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            _gesture = Gesture.Load("Gesture.xml");
         }
     }
 }

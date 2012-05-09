@@ -4,6 +4,8 @@ using System.Drawing;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.Serialization;
+using System.Xml;
 
 namespace MouseGestures
 {
@@ -72,22 +74,40 @@ namespace MouseGestures
 
     public class Gesture
     {
-        private List<GesturePoint> points = new List<GesturePoint>();
+        public static int ID = 0;
 
-        public Gesture(List<GesturePoint> points)
+        public string Name { get; set; }
+
+        public List<GesturePoint> Points { get; set; }
+
+        public static Gesture Load(string filename)
         {
-            this.points = points;
+            XmlSerializer s = new XmlSerializer(typeof(Gesture));
+            var reader = new XmlTextReader(filename);
+            return (Gesture)s.Deserialize(reader);
+        }
+
+        public Gesture()
+        {
+            Name = ID.ToString();
+            ID++;
+            Points = new List<GesturePoint>();
+        }
+
+        public Gesture(List<GesturePoint> points) : this()
+        {
+            this.Points = points;
         }
 
         public GestureState TestMotion(int index, PointF start, PointF end)
         {
-            if (index >= points.Count - 1)
+            if (index >= Points.Count - 1)
             {
                 return GestureState.Complete;
             }
 
-            var previousPoint = points[index];
-            var nextPoint = points[index + 1];
+            var previousPoint = Points[index];
+            var nextPoint = Points[index + 1];
 
             var previousRadiusSq = previousPoint.threshold * previousPoint.threshold;
             var endDX = end.X - previousPoint.X;
@@ -99,7 +119,7 @@ namespace MouseGestures
             // first check for point completion
             if (TestCrossing(quad, start, end))
             {
-                if (index == points.Count - 2) return GestureState.Complete;
+                if (index == Points.Count - 2) return GestureState.Complete;
                 else return GestureState.Advance;
             }
 
@@ -114,29 +134,26 @@ namespace MouseGestures
             var q = quad.C;
             var q2 = quad.D;
 
-            var r = Subtract(p2, p);
-            var s = Subtract(q2, q);
+            var r = p2.Subtract(p);
+            var s = q2.Subtract(q);
 
-            var qp = Subtract(q, p);
-            var rs = Cross(r, s);
+            var qp = q.Subtract(p);
+            var rs = r.Cross(s);
 
             // parallel case
             if (rs == 0) return false;
 
-            var t = Cross(qp, s) / rs;
-            var u = Cross(qp, r) / rs;
+            var t = qp.Cross(s) / rs;
+            var u = qp.Cross(r) / rs;
 
             return (t >= 0 && t <= 1 && u >= 0 && u <= 1);
         }
 
-        private PointF Subtract(PointF a, PointF b)
+        public void Save(string name)
         {
-            return new PointF(a.X - b.X, a.Y - b.Y);
-        }
-
-        private float Cross(PointF a, PointF b)
-        {
-            return a.X * b.Y - a.Y * b.X;
+            XmlSerializer s = new XmlSerializer(typeof(Gesture));
+            var writer = new XmlTextWriter(name, Encoding.UTF8);
+            s.Serialize(writer, this);
         }
     }
 }
